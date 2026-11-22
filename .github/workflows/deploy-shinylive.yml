@@ -35,7 +35,7 @@ jobs:
         run: |
           rm -rf _app site
           mkdir -p _app
-          cp -r app.R R www _app/
+          cp -r app.R nr_report.typ R www _app/
           Rscript -e '
             shinylive::export(appdir = "_app", destdir = "site")
             file.copy("www/favicon.svg", "site/favicon.svg", overwrite = TRUE)

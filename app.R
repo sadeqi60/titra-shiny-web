@@ -50,11 +50,10 @@ server <- function(input, output, session) {
     session$sendCustomMessage("titra_web_patch", patch)
   }
 
-  # Send initial capabilities & empty state (auto-detects WebR / Shinylive)
-  is_webr <- grepl("emscripten|wasm", paste(R.version$os, R.version$platform), ignore.case = TRUE)
+  # Send initial capabilities & empty state (browser Typst WASM + pure-R OOXML/ZIP works everywhere)
   session$onFlushed(function() {
     push_patch(list(
-      capabilities = list(wasm = is_webr, typst = !is_webr && nzchar(Sys.which("typst")), docx = !is_webr),
+      capabilities = list(wasm = TRUE, typst = FALSE, docx = TRUE),
       selection = state_env$selection,
       input_state = state_env$input_state
     ))
@@ -198,14 +197,33 @@ server <- function(input, output, session) {
     }
   }, ignoreNULL = TRUE)
 
-  observeEvent(input$titra_report_request, {
-    req <- input$titra_report_request
+  process_report_request <- function(req) {
     if (is.null(req) || is.null(req$id)) return()
     res <- tryCatch(
       t_handle_report_request(state_env$payload, req),
       error = function(e) list(id = req$id, ok = FALSE, error = conditionMessage(e), elapsed_s = 0)
     )
     push_patch(list(report_result = res))
+  }
+
+  observeEvent(input$titra_report_request, {
+    process_report_request(input$titra_report_request)
+  }, ignoreNULL = TRUE)
+
+  observeEvent(input$titra_report_chunk, {
+    ch <- input$titra_report_chunk
+    if (is.null(ch) || is.null(ch$tx)) return()
+    tx <- t_str(ch$tx)
+    idx <- as.integer(ch$index) + 1L
+    tot <- as.integer(ch$total)
+    if (is.null(state_env$chunks[[tx]])) state_env$chunks[[tx]] <- character(tot)
+    state_env$chunks[[tx]][idx] <- t_str(ch$data)
+    if (all(nzchar(state_env$chunks[[tx]]))) {
+      full_json <- paste(state_env$chunks[[tx]], collapse = "")
+      state_env$chunks[[tx]] <- NULL
+      req <- jsonlite::fromJSON(full_json, simplifyVector = FALSE)
+      process_report_request(req)
+    }
   }, ignoreNULL = TRUE)
 
   observeEvent(input$titra_selection, {
